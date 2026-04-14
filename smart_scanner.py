@@ -45,13 +45,9 @@ class ReportGenerator:
         self.entry_excise = ctk.CTkEntry(self.excise_frame, width=300, height=35, state="disabled")
         self.entry_excise.pack(side="left", padx=(0, 20), pady=20, fill="x", expand=True)
 
-        # Контейнер для кнопки и уведомления
-        bottom_container = ctk.CTkFrame(main_container, fg_color="transparent")
-        bottom_container.pack(fill="x", pady=(10, 0))
-
         # Кнопка
         self.button_generate = ctk.CTkButton(
-            bottom_container,
+            main_container,
             text="Сформировать отчет",
             command=self.generate_report,
             width=250,
@@ -61,11 +57,11 @@ class ReportGenerator:
             font=ctk.CTkFont(size=15, weight="bold"),
             hover_color="#3CB371"
         )
-        self.button_generate.pack(side="right")
+        self.button_generate.pack(side="right")  # Прижимаем к правому краю
 
-        # Метка для уведомлений
+        # Метка для уведомлений - пока просто создаем, не пакуем
         self.notification_label = ctk.CTkLabel(
-            bottom_container,
+            main_container,
             text="",
             font=ctk.CTkFont(size=13),
             fg_color="#2E8B57",
@@ -74,7 +70,6 @@ class ReportGenerator:
             padx=15,
             pady=8
         )
-        self.notification_label.pack(side="right", padx=(20, 0))
 
         # Привязываем события ввода
         self.entry_barcode.bind('<KeyRelease>', self.on_barcode_change)
@@ -129,16 +124,19 @@ class ReportGenerator:
             self.excise_frame.configure(border_color="#808080")
 
     def show_notification(self, message, duration=2000, label_bg='#2E8B57'):
+        # Убираем старую метку если есть
+        self.hide_notification()
+
         # Показываем уведомление
         self.notification_label.configure(text=message, fg_color=label_bg)
-        self.notification_label.pack(side="left", padx=(20, 0))
+        self.notification_label.pack(side="left", pady=(10, 0))  # Прижимаем к правому краю
 
         # Прячем через duration миллисекунд
         self.root.after(duration, self.hide_notification)
 
     def hide_notification(self):
-        self.notification_label.configure(text="")
         self.notification_label.pack_forget()
+        self.notification_label.configure(text="")
 
     def on_excise_change(self, event=None):
         excise = self.entry_excise.get()
