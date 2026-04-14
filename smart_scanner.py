@@ -7,7 +7,7 @@ import os
 import getpass
 import socket
 import ctypes
-
+import configparser
 
 def to_eng():
     try:
@@ -44,9 +44,41 @@ def is_eng():
     except:
         return False
 
+config = configparser.ConfigParser()
+if not os.path.exists('_config.ini'):
+    # конфиг по умолчанию
+    config['settings'] = {
+        'qr_path': '',
+        'appearance_mode': 'light'
+    }
+    with open('_config.ini', 'w', encoding='utf-8') as f:
+        config.write(f)
+
+config.read('_config.ini', encoding='utf-8')
+qr_path = config['settings']['qr_path']
+appearance_mode = config['settings']['appearance_mode']
+
+# colors
+border_color_base = '#808080'
+
+border_color_green = '#2E8B57'
+border_color_yellow = '#DAA520'
+border_color_red = '#DC143C'
+
+notification_color_green = '#2E8B57'
+notification_color_yellow = '#DAA520'
+notification_color_red = '#800000'
+
+if appearance_mode == 'light':
+    fg_color_disable = '#b8b8b8'
+    fg_color_enable = '#ffffff'
+else:
+    fg_color_disable = '#202121'
+    fg_color_enable = '#343536'
+
 
 # внешний вид
-ctk.set_appearance_mode('dark')
+ctk.set_appearance_mode(appearance_mode)
 ctk.set_default_color_theme('dark-blue')
 
 print(is_eng())
@@ -96,7 +128,7 @@ class ReportGenerator:
         # print(f'y*scaler {y*scaler}')
 
         # устанавливаем окончательную позицию
-        self.root.geometry(f'+{round(x*scaler)}+{round(y*scaler)}')
+        self.root.geometry(f'+{round(x * scaler)}+{round(y * scaler)}')
 
         self.create_widgets()
 
@@ -107,10 +139,10 @@ class ReportGenerator:
         main_container = ctk.CTkFrame(self.root, fg_color='transparent')
         main_container.pack(fill='both', expand=True, padx=30, pady=30)
 
-        # fg_color='#343536'
+        # fg_color=fg_color_enable
 
         # рамка для баркода
-        self.barcode_frame = ctk.CTkFrame(main_container, border_width=2, border_color='#808080', corner_radius=10)
+        self.barcode_frame = ctk.CTkFrame(main_container, border_width=2, border_color=border_color_base, corner_radius=10)
         self.barcode_frame.pack(fill='x', pady=(0, 20))
 
         label_barcode = ctk.CTkLabel(self.barcode_frame, text='Баркод:', font=ctk.CTkFont(size=14, weight='bold'))
@@ -120,13 +152,13 @@ class ReportGenerator:
         self.entry_barcode.pack(side='left', padx=(0, 20), pady=20, fill='x', expand=True)
 
         # рамка для акциза
-        self.excise_frame = ctk.CTkFrame(main_container, border_width=2, border_color='#808080', corner_radius=10)
+        self.excise_frame = ctk.CTkFrame(main_container, border_width=2, border_color=border_color_base, corner_radius=10)
         self.excise_frame.pack(fill='x', pady=(0, 30))
 
         label_excise = ctk.CTkLabel(self.excise_frame, text='Акциз:', font=ctk.CTkFont(size=14, weight='bold'))
         label_excise.pack(side='left', padx=(20, 10), pady=20)
 
-        self.entry_excise = ctk.CTkEntry(self.excise_frame, width=300, height=35, state='disabled', fg_color='#202121')
+        self.entry_excise = ctk.CTkEntry(self.excise_frame, width=300, height=35, state='disabled', fg_color=fg_color_disable)
         self.entry_excise.pack(side='left', padx=(0, 20), pady=20, fill='x', expand=True)
 
         # кнопка формирования отчёта
@@ -136,7 +168,7 @@ class ReportGenerator:
             command=self.generate_report,
             width=250,
             height=45,
-            fg_color='#2E8B57',
+            fg_color=border_color_green,
             text_color='white',
             font=ctk.CTkFont(size=15, weight='bold'),
             hover_color='#3CB371'
@@ -148,7 +180,7 @@ class ReportGenerator:
             main_container,
             text='',
             font=ctk.CTkFont(size=15),
-            fg_color='#2E8B57',
+            fg_color=border_color_green,
             text_color='white',
             corner_radius=6,
             padx=15,
@@ -176,7 +208,7 @@ class ReportGenerator:
 
             return True
         except Exception as e:
-            self.show_notification(f'Ошибка в отправке данных', label_bg='#800000')
+            self.show_notification(f'Ошибка в отправке данных', label_bg=notification_color_red)
             return False
 
     def on_barcode_change(self, event=None):
@@ -184,21 +216,21 @@ class ReportGenerator:
         barcode_len = len(barcode)
 
         if not is_eng():
-            self.show_notification(f'Неверная раскладка. Переключите на EN', label_bg='#800000')
+            self.show_notification(f'Неверная раскладка. Переключите на EN', label_bg=notification_color_red)
             self.entry_barcode.delete(0, tk.END)
         else:
             # обновление рамки баркода
             if barcode_len == 0:
-                self.barcode_frame.configure(border_color='#808080')  # серый
+                self.barcode_frame.configure(border_color=border_color_base)  # серый
 
             elif barcode_len == 13 and barcode.isdigit():
-                self.show_notification(f'EAN: OK',2000)
-                self.barcode_frame.configure(border_color='#2E8B57')  # зеленый
+                self.show_notification(f'EAN: OK', 2000)
+                self.barcode_frame.configure(border_color=border_color_green)  # зеленый
                 # активируем поле акциза и ставим фокус
                 self.entry_excise.configure(state='normal')
-                self.entry_excise.configure(fg_color='#343536')
+                self.entry_excise.configure(fg_color=fg_color_enable) # normal
                 self.entry_excise.focus()
-                self.excise_frame.configure(border_color='#DAA520')
+                self.excise_frame.configure(border_color=border_color_yellow) # желтый
 
                 # привязываем обработчик для акциза только когда поле активировано
                 if not hasattr(self, '_excise_bound'):
@@ -206,17 +238,17 @@ class ReportGenerator:
                     self._excise_bound = True
             else:
                 if barcode.isdigit():
-                    self.show_notification(f'Неверный EAN (длина {barcode_len} из 13)', label_bg='#800000')
+                    self.show_notification(f'Неверный EAN (длина {barcode_len} из 13)', label_bg=notification_color_red)
                 else:
-                    self.show_notification(f'В EAN должны быть только цифры', label_bg='#800000')
-                self.barcode_frame.configure(border_color='#DC143C')
+                    self.show_notification(f'В EAN должны быть только цифры', label_bg=notification_color_red)
+                self.barcode_frame.configure(border_color=border_color_red) # красный
                 # деактивируем поле акциза и очищаем его
                 self.entry_excise.delete(0, tk.END)
-                self.entry_excise.configure(fg_color='#202121')
+                self.entry_excise.configure(fg_color=fg_color_disable)  # темный (черный)
                 self.entry_excise.configure(state='disabled')
-                self.excise_frame.configure(border_color='#808080')
+                self.excise_frame.configure(border_color=border_color_base) # серый
 
-    def show_notification(self, message, duration=3000, label_bg='#2E8B57'):
+    def show_notification(self, message, duration=3000, label_bg=notification_color_green):
         if self._notification_timer is not None:
             try:
                 self.root.after_cancel(self._notification_timer)
@@ -250,30 +282,30 @@ class ReportGenerator:
         barcode_len = len(barcode)
 
         if not is_eng():
-            self.show_notification(f'Неверная раскладка. Переключите на EN', label_bg='#800000')
+            self.show_notification(f'Неверная раскладка. Переключите на EN', label_bg=notification_color_red)
             self.entry_excise.delete(0, tk.END)
         else:
 
             # обновление рамки акциза
             if barcode_len == 0:
-                self.excise_frame.configure(border_color='#808080')  # серый
+                self.excise_frame.configure(border_color=border_color_base)  # серый
                 self.entry_excise.delete(0, tk.END)
                 self.entry_excise.configure(state='disabled')
                 # self.barcode.focus()
                 self.entry_barcode.focus()
             elif excise_len == 0:
-                self.excise_frame.configure(border_color='#DAA520')
+                self.excise_frame.configure(border_color=border_color_yellow)
             elif excise_len == 13:
                 self.entry_barcode.delete(0, tk.END)
                 self.entry_barcode.insert(0, excise)
                 self.entry_excise.delete(0, tk.END)
-                self.excise_frame.configure(border_color='#DAA520')
-                self.show_notification(f'Баркод обновлён', label_bg='#DAA520')
+                self.excise_frame.configure(border_color=border_color_yellow)
+                self.show_notification(f'Баркод обновлён', label_bg=notification_color_yellow)
             elif 0 < excise_len <= 20:
-                self.excise_frame.configure(border_color='#DC143C')  # красный
-                self.show_notification(f'Неверный акциз (длина {excise_len} из 150)', label_bg='#800000')
+                self.excise_frame.configure(border_color=border_color_red)  # красный
+                self.show_notification(f'Неверный акциз (длина {excise_len} из 150)', label_bg=notification_color_red)
             else:  # больше n символов
-                self.excise_frame.configure(border_color='#2E8B57')  # зеленый
+                self.excise_frame.configure(border_color=border_color_green)  # зеленый
 
                 # фильтр баркода
                 if barcode_len == 13 and barcode.isdigit():
@@ -291,8 +323,8 @@ class ReportGenerator:
                     self.entry_excise.configure(state='disabled')
 
                     # сбрасываем цвета рамок
-                    self.barcode_frame.configure(border_color='#808080')
-                    self.excise_frame.configure(border_color='#808080')
+                    self.barcode_frame.configure(border_color=border_color_base)
+                    self.excise_frame.configure(border_color=border_color_base)
 
                     # устанавливаем курсор на поле баркода
                     self.entry_barcode.focus()
@@ -304,15 +336,15 @@ class ReportGenerator:
         if not barcode or not excise:
             return
 
-        # отправляем данные через ту же функцию
+        # отправляем данные
         self.send_data(barcode, excise)
 
         # очищаем поля
         self.entry_barcode.delete(0, tk.END)
         self.entry_excise.delete(0, tk.END)
         self.entry_excise.configure(state='disabled')
-        self.barcode_frame.configure(border_color='#808080')
-        self.excise_frame.configure(border_color='#808080')
+        self.barcode_frame.configure(border_color=border_color_base)
+        self.excise_frame.configure(border_color=border_color_base)
         self.entry_barcode.focus()
 
     def run(self):
