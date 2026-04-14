@@ -1,3 +1,4 @@
+import time
 import tkinter as tk
 from tkinter import messagebox
 import customtkinter as ctk
@@ -5,6 +6,7 @@ import datetime
 import os
 import getpass
 import socket
+from lang_switch import to_english
 
 # внешний вид
 ctk.set_appearance_mode("dark")
@@ -17,6 +19,7 @@ class ReportGenerator:
         self.root.title("Scanner")
         self.root.geometry("650x300")
         self.root.resizable(False, False)
+        self._notification_timer = None
 
         self.create_widgets()
 
@@ -45,7 +48,7 @@ class ReportGenerator:
         self.entry_excise = ctk.CTkEntry(self.excise_frame, width=300, height=35, state="disabled")
         self.entry_excise.pack(side="left", padx=(0, 20), pady=20, fill="x", expand=True)
 
-        # Кнопка
+        # кнопка формирования отчёта
         self.button_generate = ctk.CTkButton(
             main_container,
             text="Сформировать отчет",
@@ -106,6 +109,7 @@ class ReportGenerator:
             # Активируем поле акциза и ставим курсор
             self.entry_excise.configure(state="normal")
             self.entry_excise.focus()
+            self.excise_frame.configure(border_color="#DAA520")
             # Привязываем обработчик для акциза только когда поле активировано
             if not hasattr(self, '_excise_bound'):
                 self.entry_excise.bind('<KeyRelease>', self.on_excise_change)
@@ -124,19 +128,35 @@ class ReportGenerator:
             self.excise_frame.configure(border_color="#808080")
 
     def show_notification(self, message, duration=2000, label_bg='#2E8B57'):
+        # Если уже есть активный таймер, отменяем его
+        if self._notification_timer is not None:
+            try:
+                self.root.after_cancel(self._notification_timer)
+            except:
+                pass
+            self._notification_timer = None
+
         # Убираем старую метку если есть
         self.hide_notification()
 
         # Показываем уведомление
         self.notification_label.configure(text=message, fg_color=label_bg)
-        self.notification_label.pack(side="left", pady=(10, 0))  # Прижимаем к правому краю
+        self.notification_label.pack(side="left", pady=(10, 0))
 
-        # Прячем через duration миллисекунд
-        self.root.after(duration, self.hide_notification)
+        # Сохраняем таймер для отмены
+        self._notification_timer = self.root.after(duration, self.hide_notification)
 
     def hide_notification(self):
         self.notification_label.pack_forget()
         self.notification_label.configure(text="")
+
+        # Очищаем таймер если есть
+        if self._notification_timer is not None:
+            try:
+                self.root.after_cancel(self._notification_timer)
+            except:
+                pass
+            self._notification_timer = None
 
     def on_excise_change(self, event=None):
         excise = self.entry_excise.get()
@@ -144,14 +164,13 @@ class ReportGenerator:
 
         # Обновляем цвет рамки акциза
         if excise_len == 0:
-            self.excise_frame.configure(border_color='#808080')  # серый
+            ...#self.excise_frame.configure(border_color='#808080')  # серый
         elif excise_len <= 10:
             self.excise_frame.configure(border_color='#DC143C')  # красный
             self.show_notification(f'Неверный акциз (длина {excise_len} из 150)',
                                    2000, label_bg='#800000')
         else:  # больше 100 символов
             self.excise_frame.configure(border_color="#2E8B57")  # зеленый
-
             # Проверяем баркод
             barcode = self.entry_barcode.get()
             if len(barcode) == 13 and barcode.isdigit():
