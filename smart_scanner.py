@@ -6,11 +6,45 @@ import datetime
 import os
 import getpass
 import socket
-from lang_switch import to_english
+import ctypes
 
 # внешний вид
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
+
+
+def ensure_english_layout():
+    try:
+        # получаем текущее активное окно
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        # получаем идентификатор потока окна
+        thread_id = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, None)
+        # получаем текущую раскладку
+        layout = ctypes.windll.user32.GetKeyboardLayout(thread_id)
+        layout_id = layout & 0xFFFF
+
+        # проверяем, английская ли раскладка
+        if (layout_id & 0x00FF) == 0x09 or layout_id == 0x0409:
+            return True
+
+        # 0x0050 - WM_INPUTLANGCHANGEREQUEST
+        # 0x02 - INPUTLANGCHANGE_SYSCHARSET
+        # 0x0409 - английская раскладка (LCID)
+        result = ctypes.windll.user32.PostMessageW(hwnd, 0x0050, 0, 0x0409)
+
+        # небольшая задержка для применения
+        time.sleep(0.1)
+
+        # проверяем, изменилась ли раскладка
+        thread_id = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, None)
+        layout = ctypes.windll.user32.GetKeyboardLayout(thread_id)
+        layout_id = layout & 0xFFFF
+
+        return (layout_id & 0x00FF) == 0x09 or layout_id == 0x0409
+
+    except Exception as e:
+        print(f"Ошибка переключения раскладки: {e}")
+        return False
 
 
 class ReportGenerator:
@@ -22,6 +56,17 @@ class ReportGenerator:
         self._notification_timer = None
 
         self.create_widgets()
+
+        # привязываем событие фокуса для проверки раскладки
+        self.entry_barcode.bind('<FocusIn>', self.on_focus_barcode)
+
+        # устанавливаем фокус на поле баркода после запуска
+        self.root.after(100, self.set_focus_to_barcode)
+
+    def set_focus_to_barcode(self):
+        self.entry_barcode.focus()
+        # проверяем раскладку при запуске
+        self.on_focus_barcode()
 
     def create_widgets(self):
         # основной контейнер
@@ -60,9 +105,9 @@ class ReportGenerator:
             font=ctk.CTkFont(size=15, weight="bold"),
             hover_color="#3CB371"
         )
-        self.button_generate.pack(side="right")  # Прижимаем к правому краю
+        self.button_generate.pack(side="right")
 
-        # Метка для уведомлений - пока просто создаем, не пакуем
+        # метка для уведомлений
         self.notification_label = ctk.CTkLabel(
             main_container,
             text="",
@@ -74,16 +119,24 @@ class ReportGenerator:
             pady=8
         )
 
-        # Привязываем события ввода
+        # привязываем события ввода
         self.entry_barcode.bind('<KeyRelease>', self.on_barcode_change)
 
+    def on_focus_barcode(self, event=None):
+        if ensure_english_layout():
+            # раскладка успешно переключена на английскую
+            pass
+        else:
+            pass
+            #self.show_notification("Не удалось переключить раскладку на английскую", 2000, label_bg='#800000')
+
     def send_data(self, barcode, excise):
-        # Получаем данные о пользователе и компьютере
+        # получаем данные о пользователе и компьютере
         username = getpass.getuser()
         computer_name = socket.gethostname()
         current_time = datetime.datetime.now().strftime('%d-%m-%y %H:%M:%S')
 
-        # Выводим все данные
+        # выводим все данные
         print(f"\n--- Отправка данных ---")
         print(f"Время: {current_time}")
         print(f"Пользователь: {username}")
@@ -92,43 +145,35 @@ class ReportGenerator:
         print(f"Акциз: {excise}")
         print(f"----------------------\n")
 
-        # Здесь можно добавить реальную отправку данных на сервер
         return True
 
     def on_barcode_change(self, event=None):
         barcode = self.entry_barcode.get()
         barcode_len = len(barcode)
 
-        # Обновляем цвет рамки баркода
+        # обновляем цвет рамки баркода
         if barcode_len == 0:
-            self.barcode_frame.configure(border_color="#808080")  # серый
+            self.barcode_frame.configure(border_color="#808080")
         elif barcode_len == 13 and barcode.isdigit():
-            self.show_notification(f'EAN верный',
-                                   2000)
-            self.barcode_frame.configure(border_color="#2E8B57")  # зеленый
-            # Активируем поле акциза и ставим курсор
+            self.show_notification('EAN верный', 2000)
+            self.barcode_frame.configure(border_color="#2E8B57")
             self.entry_excise.configure(state="normal")
             self.entry_excise.focus()
             self.excise_frame.configure(border_color="#DAA520")
-            # Привязываем обработчик для акциза только когда поле активировано
             if not hasattr(self, '_excise_bound'):
                 self.entry_excise.bind('<KeyRelease>', self.on_excise_change)
                 self._excise_bound = True
         else:
             if barcode.isdigit():
-                self.show_notification(f'Неверный EAN (длина {barcode_len} из 13)',
-                                       1500, label_bg='#800000')
+                self.show_notification(f'Неверный EAN (длина {barcode_len} из 13)', 1500, label_bg='#800000')
             else:
-                self.show_notification(f'В EAN должны быть только цифры',
-                                       1500, label_bg='#800000')
+                self.show_notification('В EAN должны быть только цифры', 1500, label_bg='#800000')
             self.barcode_frame.configure(border_color="#DC143C")
-            # Деактивируем поле акциза и очищаем его
             self.entry_excise.configure(state="disabled")
             self.entry_excise.delete(0, tk.END)
             self.excise_frame.configure(border_color="#808080")
 
     def show_notification(self, message, duration=2000, label_bg='#2E8B57'):
-        # Если уже есть активный таймер, отменяем его
         if self._notification_timer is not None:
             try:
                 self.root.after_cancel(self._notification_timer)
@@ -136,21 +181,17 @@ class ReportGenerator:
                 pass
             self._notification_timer = None
 
-        # Убираем старую метку если есть
         self.hide_notification()
 
-        # Показываем уведомление
         self.notification_label.configure(text=message, fg_color=label_bg)
         self.notification_label.pack(side="left", pady=(10, 0))
 
-        # Сохраняем таймер для отмены
         self._notification_timer = self.root.after(duration, self.hide_notification)
 
     def hide_notification(self):
         self.notification_label.pack_forget()
         self.notification_label.configure(text="")
 
-        # Очищаем таймер если есть
         if self._notification_timer is not None:
             try:
                 self.root.after_cancel(self._notification_timer)
@@ -162,37 +203,23 @@ class ReportGenerator:
         excise = self.entry_excise.get()
         excise_len = len(excise)
 
-        # Обновляем цвет рамки акциза
         if excise_len == 0:
-            ...#self.excise_frame.configure(border_color='#808080')  # серый
+            pass
         elif excise_len <= 10:
-            self.excise_frame.configure(border_color='#DC143C')  # красный
-            self.show_notification(f'Неверный акциз (длина {excise_len} из 150)',
-                                   2000, label_bg='#800000')
-        else:  # больше 100 символов
-            self.excise_frame.configure(border_color="#2E8B57")  # зеленый
-            # Проверяем баркод
+            self.excise_frame.configure(border_color='#DC143C')
+            self.show_notification(f'Неверный акциз (длина {excise_len} из 150)', 2000, label_bg='#800000')
+        else:
+            self.excise_frame.configure(border_color="#2E8B57")
             barcode = self.entry_barcode.get()
             if len(barcode) == 13 and barcode.isdigit():
-                # Отправляем данные
                 self.send_data(barcode, excise)
+                self.show_notification("Данные успешно добавлены", 2000)
 
-                # Показываем уведомление снизу
-                self.show_notification(f"Данные успешно отправлены",
-                                       2000)
-
-                # Очищаем оба поля
                 self.entry_barcode.delete(0, tk.END)
                 self.entry_excise.delete(0, tk.END)
-
-                # Деактивируем поле акциза
                 self.entry_excise.configure(state="disabled")
-
-                # Сбрасываем цвета рамок
                 self.barcode_frame.configure(border_color="#808080")
                 self.excise_frame.configure(border_color="#808080")
-
-                # Устанавливаем курсор на поле баркода
                 self.entry_barcode.focus()
 
     def generate_report(self):
@@ -203,10 +230,8 @@ class ReportGenerator:
             messagebox.showwarning("Предупреждение", "Заполните оба поля!")
             return
 
-        # Отправляем данные через ту же функцию
         self.send_data(barcode, excise)
 
-        # Очищаем поля
         self.entry_barcode.delete(0, tk.END)
         self.entry_excise.delete(0, tk.END)
         self.entry_excise.configure(state="disabled")
