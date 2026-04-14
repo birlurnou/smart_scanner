@@ -58,16 +58,49 @@ class ReportGenerator:
     def __init__(self):
         self.root = ctk.CTk()
         self.root.title('Scanner')
-        self.root.geometry('650x300')
-        self.root.resizable(False, False)
+
+        # self.root.geometry('650x300')
+        # задаем размеры окна
+        self.width = 650
+        self.height = 300
+        self.root.geometry(f'{self.width}x{self.height}')
+
+        self.root.resizable(True, False)
         self._notification_timer = None
+
+        # ждем применения геометрии
+        self.root.update_idletasks()
+
+        # получаем реальные размеры окна после применения масштабирования
+        actual_width = self.root.winfo_width()
+        # actual_height = self.root.winfo_height()
+        # print(f'actual_width {actual_width}')
+        # print(f'actual_height {actual_height}')
+
+        # находим dpi scaler
+        scaler = round(actual_width / self.width, 2)
+        # print(f'scaler {scaler}')
+
+        # получаем размеры экрана
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        # print(f'screen_width {screen_width}')
+        # print(f'screen_height {screen_height}')
+
+        # вычисляем позицию для центрирования
+        x = (screen_width - self.width) // 2
+        y = (screen_height - self.height) // 2
+        # print(f'x {x}')
+        # print(f'y {y}')
+        # print(f'x*scaler {x*scaler}')
+        # print(f'y*scaler {y*scaler}')
+
+        # устанавливаем окончательную позицию
+        self.root.geometry(f'+{round(x*scaler)}+{round(y*scaler)}')
 
         self.create_widgets()
 
         self.root.after(100, self.entry_barcode.focus)
-
-    # def set_focus_to_barcode(self):
-    #     self.entry_barcode.focus()
 
     def create_widgets(self):
         # основной контейнер
@@ -114,7 +147,7 @@ class ReportGenerator:
         self.notification_label = ctk.CTkLabel(
             main_container,
             text='',
-            font=ctk.CTkFont(size=13),
+            font=ctk.CTkFont(size=15),
             fg_color='#2E8B57',
             text_color='white',
             corner_radius=6,
@@ -155,7 +188,7 @@ class ReportGenerator:
             self.barcode_frame.configure(border_color='#808080')  # серый
 
         elif barcode_len == 13 and barcode.isdigit():
-            # self.show_notification(f'EAN верный',2000)
+            self.show_notification(f'EAN: OK',2000)
             self.barcode_frame.configure(border_color='#2E8B57')  # зеленый
             # активируем поле акциза и ставим фокус
             self.entry_excise.configure(state='normal')
@@ -190,7 +223,7 @@ class ReportGenerator:
         self.hide_notification()
 
         self.notification_label.configure(text=message, fg_color=label_bg)
-        self.notification_label.pack(side='left', pady=(10, 0))
+        self.notification_label.pack(side='left', pady=(5, 0))
 
         self._notification_timer = self.root.after(duration, self.hide_notification)
 
@@ -222,9 +255,16 @@ class ReportGenerator:
                 self.excise_frame.configure(border_color='#808080')  # серый
                 self.entry_excise.delete(0, tk.END)
                 self.entry_excise.configure(state='disabled')
-                self.barcode.focus()
+                # self.barcode.focus()
+                self.entry_barcode.focus()
             elif excise_len == 0:
                 pass
+            elif excise_len == 13:
+                self.entry_barcode.delete(0, tk.END)
+                self.entry_barcode.insert(0, excise)
+                self.entry_excise.delete(0, tk.END)
+                self.show_notification(f'Баркод обновлён', label_bg='#DAA520')
+
             elif 0 < excise_len <= 10:
                 self.excise_frame.configure(border_color='#DC143C')  # красный
                 self.show_notification(f'Неверный акциз (длина {excise_len} из 150)', label_bg='#800000')
