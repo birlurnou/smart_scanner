@@ -54,6 +54,7 @@ class ReportGenerator:
         self.root.geometry("650x300")
         self.root.resizable(False, False)
         self._notification_timer = None
+        self._skip_next_excise = False  # Флаг для пропуска обработки акциза
 
         self.create_widgets()
 
@@ -124,21 +125,30 @@ class ReportGenerator:
         self.entry_barcode.bind('<KeyRelease>', self.on_barcode_change)
 
     def on_focus_barcode(self, event=None):
-        if ensure_english_layout():
-            # раскладка успешно переключена на английскую
-            pass
+        """Проверяем раскладку при фокусе на поле баркода"""
+        if not ensure_english_layout():
+            # Если раскладка не английская, очищаем поле и показываем сообщение
+            self.entry_barcode.delete(0, tk.END)
+            self.show_notification("Ошибка: раскладка должна быть английской! Переключите на EN", 2500, label_bg='#800000')
+            self.barcode_frame.configure(border_color="#DC143C")
         else:
-            pass
-            #self.show_notification("Не удалось переключить раскладку на английскую", 2000, label_bg='#800000')
+            if len(self.entry_barcode.get()) == 0:
+                self.barcode_frame.configure(border_color="#808080")
 
     def on_focus_excise(self, event=None):
         """Проверяем раскладку при фокусе на поле акциза"""
-        if ensure_english_layout():
-            # раскладка успешно переключена на английскую
-            pass
+        if not ensure_english_layout():
+            # Если раскладка не английская, очищаем поле и показываем сообщение
+            self.entry_excise.delete(0, tk.END)
+            self.show_notification("Ошибка: раскладка должна быть английской! Переключите на EN", 2500, label_bg='#800000')
+            self.excise_frame.configure(border_color="#DC143C")
+            # Устанавливаем флаг, чтобы пропустить следующую обработку акциза
+            self._skip_next_excise = True
+            # Возвращаем фокус на поле баркода
+            self.entry_barcode.focus()
         else:
-            pass
-            #self.show_notification("Не удалось переключить раскладку на английскую", 2000, label_bg='#800000')
+            if len(self.entry_excise.get()) == 0:
+                self.excise_frame.configure(border_color="#DAA520")
 
     def send_data(self, barcode, excise):
         # получаем данные о пользователе и компьютере
@@ -210,6 +220,11 @@ class ReportGenerator:
             self._notification_timer = None
 
     def on_excise_change(self, event=None):
+        # Если установлен флаг пропуска, пропускаем обработку и сбрасываем флаг
+        if self._skip_next_excise:
+            self._skip_next_excise = False
+            return
+
         excise = self.entry_excise.get()
         excise_len = len(excise)
 
