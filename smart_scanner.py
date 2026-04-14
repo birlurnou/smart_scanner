@@ -14,19 +14,19 @@ def to_eng():
         hwnd = ctypes.windll.user32.GetForegroundWindow()
         tid = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, None)
         current = ctypes.windll.user32.GetKeyboardLayout(tid) & 0xFFFF
-    
+
         max_attempts = 9
         attempts = 0
-    
+
         while (current & 0x00FF) != 0x09 and attempts < max_attempts:
             ctypes.windll.user32.PostMessageW(hwnd, 0x0050, 0, 0)
             time.sleep(0.05)
-    
+
             hwnd = ctypes.windll.user32.GetForegroundWindow()
             tid = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, None)
             current = ctypes.windll.user32.GetKeyboardLayout(tid) & 0xFFFF
             attempts += 1
-    
+
         return (current & 0x00FF) == 0x09
     except:
         return False
@@ -74,6 +74,8 @@ class ReportGenerator:
         main_container = ctk.CTkFrame(self.root, fg_color='transparent')
         main_container.pack(fill='both', expand=True, padx=30, pady=30)
 
+        # fg_color='#343536'
+
         # рамка для баркода
         self.barcode_frame = ctk.CTkFrame(main_container, border_width=2, border_color='#808080', corner_radius=10)
         self.barcode_frame.pack(fill='x', pady=(0, 20))
@@ -91,7 +93,7 @@ class ReportGenerator:
         label_excise = ctk.CTkLabel(self.excise_frame, text='Акциз:', font=ctk.CTkFont(size=14, weight='bold'))
         label_excise.pack(side='left', padx=(20, 10), pady=20)
 
-        self.entry_excise = ctk.CTkEntry(self.excise_frame, width=300, height=35, state='disabled')
+        self.entry_excise = ctk.CTkEntry(self.excise_frame, width=300, height=35, state='disabled', fg_color='#202121')
         self.entry_excise.pack(side='left', padx=(0, 20), pady=20, fill='x', expand=True)
 
         # кнопка формирования отчёта
@@ -129,7 +131,7 @@ class ReportGenerator:
             username = getpass.getuser()
             computer_name = socket.gethostname()
             current_time = datetime.datetime.now().strftime('%d-%m-%y %H:%M:%S')
-    
+
             # выводим все данные
             print(f'\n--- Отправка данных ---')
             print(f'Время: {current_time}')
@@ -138,7 +140,7 @@ class ReportGenerator:
             print(f'Баркод: {barcode}')
             print(f'Акциз: {excise}')
             print(f'----------------------\n')
-    
+
             return True
         except Exception as e:
             self.show_notification(f'Ошибка в отправке данных', label_bg='#800000')
@@ -157,6 +159,7 @@ class ReportGenerator:
             self.barcode_frame.configure(border_color='#2E8B57')  # зеленый
             # активируем поле акциза и ставим фокус
             self.entry_excise.configure(state='normal')
+            self.entry_excise.configure(fg_color='#343536')
             self.entry_excise.focus()
             self.excise_frame.configure(border_color='#DAA520')
 
@@ -172,6 +175,7 @@ class ReportGenerator:
             self.barcode_frame.configure(border_color='#DC143C')
             # деактивируем поле акциза и очищаем его
             self.entry_excise.delete(0, tk.END)
+            self.entry_excise.configure(fg_color='#202121')
             self.entry_excise.configure(state='disabled')
             self.excise_frame.configure(border_color='#808080')
 
