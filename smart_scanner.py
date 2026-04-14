@@ -17,7 +17,6 @@ class ReportGenerator:
         self.root.title("Scanner")
         self.root.geometry("650x300")
         self.root.resizable(False, False)
-        self.current_notification = None
 
         self.create_widgets()
 
@@ -113,21 +112,11 @@ class ReportGenerator:
             self.excise_frame.configure(border_color="#808080")
 
     def show_notification(self, message, duration=2000, label_bg='#2E8B57'):
-        # Закрываем предыдущее уведомление, если оно существует
-        if self.current_notification is not None:
-            try:
-                self.current_notification.destroy()
-            except:
-                pass
-
         # Показывает всплывающее уведомление снизу окна
         # Создаем всплывающее окно
         notification = tk.Toplevel(self.root)
         notification.title("")
         notification.overrideredirect(True)  # Убираем рамку окна
-
-        # Сохраняем ссылку на текущее уведомление
-        self.current_notification = notification
 
         # Настраиваем внешний вид
         notification.configure(bg="#2E8B57")
