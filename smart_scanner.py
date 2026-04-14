@@ -45,9 +45,13 @@ class ReportGenerator:
         self.entry_excise = ctk.CTkEntry(self.excise_frame, width=300, height=35, state="disabled")
         self.entry_excise.pack(side="left", padx=(0, 20), pady=20, fill="x", expand=True)
 
+        # Контейнер для кнопки и уведомления
+        bottom_container = ctk.CTkFrame(main_container, fg_color="transparent")
+        bottom_container.pack(fill="x", pady=(10, 0))
+
         # Кнопка
         self.button_generate = ctk.CTkButton(
-            main_container,
+            bottom_container,
             text="Сформировать отчет",
             command=self.generate_report,
             width=250,
@@ -57,7 +61,20 @@ class ReportGenerator:
             font=ctk.CTkFont(size=15, weight="bold"),
             hover_color="#3CB371"
         )
-        self.button_generate.pack(anchor='e')
+        self.button_generate.pack(side="right")
+
+        # Метка для уведомлений
+        self.notification_label = ctk.CTkLabel(
+            bottom_container,
+            text="",
+            font=ctk.CTkFont(size=13),
+            fg_color="#2E8B57",
+            text_color="white",
+            corner_radius=6,
+            padx=15,
+            pady=8
+        )
+        self.notification_label.pack(side="right", padx=(20, 0))
 
         # Привязываем события ввода
         self.entry_barcode.bind('<KeyRelease>', self.on_barcode_change)
@@ -112,29 +129,16 @@ class ReportGenerator:
             self.excise_frame.configure(border_color="#808080")
 
     def show_notification(self, message, duration=2000, label_bg='#2E8B57'):
-        # Показывает всплывающее уведомление снизу окна
-        # Создаем всплывающее окно
-        notification = tk.Toplevel(self.root)
-        notification.title("")
-        notification.overrideredirect(True)  # Убираем рамку окна
+        # Показываем уведомление
+        self.notification_label.configure(text=message, fg_color=label_bg)
+        self.notification_label.pack(side="left", padx=(20, 0))
 
-        # Настраиваем внешний вид
-        notification.configure(bg="#2E8B57")
+        # Прячем через duration миллисекунд
+        self.root.after(duration, self.hide_notification)
 
-        # Добавляем текст
-        label = tk.Label(notification, text=message, font=("Arial", 13),
-                         fg="white", bg=label_bg, padx=20, pady=10, relief="raised")
-                         # relief: Literal["raised", "sunken", "flat", "ridge", "solid", "groove"] = "flat")
-        label.pack()
-
-        # Позиционируем окно снизу главного окна
-        self.root.update_idletasks()
-        x = self.root.winfo_x() + (self.root.winfo_width() // 2) - 300
-        y = self.root.winfo_y() + self.root.winfo_height() - 45
-        notification.geometry(f"+{x}+{y}")
-
-        # Автоматически закрываем через duration миллисекунд
-        notification.after(duration, notification.destroy)
+    def hide_notification(self):
+        self.notification_label.configure(text="")
+        self.notification_label.pack_forget()
 
     def on_excise_change(self, event=None):
         excise = self.entry_excise.get()
