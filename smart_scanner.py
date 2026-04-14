@@ -59,6 +59,7 @@ class ReportGenerator:
 
         # привязываем событие фокуса для проверки раскладки
         self.entry_barcode.bind('<FocusIn>', self.on_focus_barcode)
+        self.entry_excise.bind('<FocusIn>', self.on_focus_excise)
 
         # устанавливаем фокус на поле баркода после запуска
         self.root.after(100, self.set_focus_to_barcode)
@@ -123,6 +124,15 @@ class ReportGenerator:
         self.entry_barcode.bind('<KeyRelease>', self.on_barcode_change)
 
     def on_focus_barcode(self, event=None):
+        if ensure_english_layout():
+            # раскладка успешно переключена на английскую
+            pass
+        else:
+            pass
+            #self.show_notification("Не удалось переключить раскладку на английскую", 2000, label_bg='#800000')
+
+    def on_focus_excise(self, event=None):
+        """Проверяем раскладку при фокусе на поле акциза"""
         if ensure_english_layout():
             # раскладка успешно переключена на английскую
             pass
