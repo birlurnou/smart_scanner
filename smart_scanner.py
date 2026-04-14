@@ -183,34 +183,38 @@ class ReportGenerator:
         barcode = self.entry_barcode.get()
         barcode_len = len(barcode)
 
-        # обновление рамки баркода
-        if barcode_len == 0:
-            self.barcode_frame.configure(border_color='#808080')  # серый
-
-        elif barcode_len == 13 and barcode.isdigit():
-            self.show_notification(f'EAN: OK',2000)
-            self.barcode_frame.configure(border_color='#2E8B57')  # зеленый
-            # активируем поле акциза и ставим фокус
-            self.entry_excise.configure(state='normal')
-            self.entry_excise.configure(fg_color='#343536')
-            self.entry_excise.focus()
-            self.excise_frame.configure(border_color='#DAA520')
-
-            # привязываем обработчик для акциза только когда поле активировано
-            if not hasattr(self, '_excise_bound'):
-                self.entry_excise.bind('<KeyRelease>', self.on_excise_change)
-                self._excise_bound = True
+        if not is_eng():
+            self.show_notification(f'Неверная раскладка. Переключите на EN', label_bg='#800000')
+            self.entry_barcode.delete(0, tk.END)
         else:
-            if barcode.isdigit():
-                self.show_notification(f'Неверный EAN (длина {barcode_len} из 13)', label_bg='#800000')
+            # обновление рамки баркода
+            if barcode_len == 0:
+                self.barcode_frame.configure(border_color='#808080')  # серый
+
+            elif barcode_len == 13 and barcode.isdigit():
+                self.show_notification(f'EAN: OK',2000)
+                self.barcode_frame.configure(border_color='#2E8B57')  # зеленый
+                # активируем поле акциза и ставим фокус
+                self.entry_excise.configure(state='normal')
+                self.entry_excise.configure(fg_color='#343536')
+                self.entry_excise.focus()
+                self.excise_frame.configure(border_color='#DAA520')
+
+                # привязываем обработчик для акциза только когда поле активировано
+                if not hasattr(self, '_excise_bound'):
+                    self.entry_excise.bind('<KeyRelease>', self.on_excise_change)
+                    self._excise_bound = True
             else:
-                self.show_notification(f'В EAN должны быть только цифры', label_bg='#800000')
-            self.barcode_frame.configure(border_color='#DC143C')
-            # деактивируем поле акциза и очищаем его
-            self.entry_excise.delete(0, tk.END)
-            self.entry_excise.configure(fg_color='#202121')
-            self.entry_excise.configure(state='disabled')
-            self.excise_frame.configure(border_color='#808080')
+                if barcode.isdigit():
+                    self.show_notification(f'Неверный EAN (длина {barcode_len} из 13)', label_bg='#800000')
+                else:
+                    self.show_notification(f'В EAN должны быть только цифры', label_bg='#800000')
+                self.barcode_frame.configure(border_color='#DC143C')
+                # деактивируем поле акциза и очищаем его
+                self.entry_excise.delete(0, tk.END)
+                self.entry_excise.configure(fg_color='#202121')
+                self.entry_excise.configure(state='disabled')
+                self.excise_frame.configure(border_color='#808080')
 
     def show_notification(self, message, duration=3000, label_bg='#2E8B57'):
         if self._notification_timer is not None:
@@ -258,14 +262,14 @@ class ReportGenerator:
                 # self.barcode.focus()
                 self.entry_barcode.focus()
             elif excise_len == 0:
-                pass
+                self.excise_frame.configure(border_color='#DAA520')
             elif excise_len == 13:
                 self.entry_barcode.delete(0, tk.END)
                 self.entry_barcode.insert(0, excise)
                 self.entry_excise.delete(0, tk.END)
+                self.excise_frame.configure(border_color='#DAA520')
                 self.show_notification(f'Баркод обновлён', label_bg='#DAA520')
-
-            elif 0 < excise_len <= 10:
+            elif 0 < excise_len <= 20:
                 self.excise_frame.configure(border_color='#DC143C')  # красный
                 self.show_notification(f'Неверный акциз (длина {excise_len} из 150)', label_bg='#800000')
             else:  # больше n символов
