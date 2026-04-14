@@ -8,43 +8,47 @@ import getpass
 import socket
 import ctypes
 
+
+def to_eng():
+    hwnd = ctypes.windll.user32.GetForegroundWindow()
+    tid = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, None)
+    current = ctypes.windll.user32.GetKeyboardLayout(tid) & 0xFFFF
+
+    max_attempts = 9
+    attempts = 0
+
+    while (current & 0x00FF) != 0x09 and attempts < max_attempts:
+        ctypes.windll.user32.PostMessageW(hwnd, 0x0050, 0, 0)
+        time.sleep(0.05)
+
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        tid = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, None)
+        current = ctypes.windll.user32.GetKeyboardLayout(tid) & 0xFFFF
+        attempts += 1
+
+    return (current & 0x00FF) == 0x09
+
+
+def is_eng():
+    try:
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        thread_id = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, None)
+        layout = ctypes.windll.user32.GetKeyboardLayout(thread_id)
+        layout_id = layout & 0xFFFF
+
+        # английская раскладка - код 0x0409 или 0x09
+        return (layout_id & 0x00FF) == 0x09 or layout_id == 0x0409
+    except:
+        return False
+
+
 # внешний вид
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
-
-def ensure_english_layout():
-    try:
-        # получаем текущее активное окно
-        hwnd = ctypes.windll.user32.GetForegroundWindow()
-        # получаем идентификатор потока окна
-        thread_id = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, None)
-        # получаем текущую раскладку
-        layout = ctypes.windll.user32.GetKeyboardLayout(thread_id)
-        layout_id = layout & 0xFFFF
-
-        # проверяем, английская ли раскладка
-        if (layout_id & 0x00FF) == 0x09 or layout_id == 0x0409:
-            return True
-
-        # 0x0050 - WM_INPUTLANGCHANGEREQUEST
-        # 0x02 - INPUTLANGCHANGE_SYSCHARSET
-        # 0x0409 - английская раскладка (LCID)
-        result = ctypes.windll.user32.PostMessageW(hwnd, 0x0050, 0, 0x0409)
-
-        # небольшая задержка для применения
-        time.sleep(0.1)
-
-        # проверяем, изменилась ли раскладка
-        thread_id = ctypes.windll.user32.GetWindowThreadProcessId(hwnd, None)
-        layout = ctypes.windll.user32.GetKeyboardLayout(thread_id)
-        layout_id = layout & 0xFFFF
-
-        return (layout_id & 0x00FF) == 0x09 or layout_id == 0x0409
-
-    except Exception as e:
-        print(f"Ошибка переключения раскладки: {e}")
-        return False
+print(is_eng())
+to_eng()
+print(is_eng())
 
 
 class ReportGenerator:
@@ -54,21 +58,13 @@ class ReportGenerator:
         self.root.geometry("650x300")
         self.root.resizable(False, False)
         self._notification_timer = None
-        self._skip_next_excise = False  # Флаг для пропуска обработки акциза
 
         self.create_widgets()
 
-        # привязываем событие фокуса для проверки раскладки
-        self.entry_barcode.bind('<FocusIn>', self.on_focus_barcode)
-        self.entry_excise.bind('<FocusIn>', self.on_focus_excise)
+        self.root.after(100, self.entry_barcode.focus)
 
-        # устанавливаем фокус на поле баркода после запуска
-        self.root.after(100, self.set_focus_to_barcode)
-
-    def set_focus_to_barcode(self):
-        self.entry_barcode.focus()
-        # проверяем раскладку при запуске
-        self.on_focus_barcode()
+    # def set_focus_to_barcode(self):
+    #     self.entry_barcode.focus()
 
     def create_widgets(self):
         # основной контейнер
@@ -124,32 +120,6 @@ class ReportGenerator:
         # привязываем события ввода
         self.entry_barcode.bind('<KeyRelease>', self.on_barcode_change)
 
-    def on_focus_barcode(self, event=None):
-        """Проверяем раскладку при фокусе на поле баркода"""
-        if not ensure_english_layout():
-            # Если раскладка не английская, очищаем поле и показываем сообщение
-            self.entry_barcode.delete(0, tk.END)
-            self.show_notification("Ошибка: раскладка должна быть английской! Переключите на EN", 2500, label_bg='#800000')
-            self.barcode_frame.configure(border_color="#DC143C")
-        else:
-            if len(self.entry_barcode.get()) == 0:
-                self.barcode_frame.configure(border_color="#808080")
-
-    def on_focus_excise(self, event=None):
-        """Проверяем раскладку при фокусе на поле акциза"""
-        if not ensure_english_layout():
-            # Если раскладка не английская, очищаем поле и показываем сообщение
-            self.entry_excise.delete(0, tk.END)
-            self.show_notification("Ошибка: раскладка должна быть английской! Переключите на EN", 2500, label_bg='#800000')
-            self.excise_frame.configure(border_color="#DC143C")
-            # Устанавливаем флаг, чтобы пропустить следующую обработку акциза
-            self._skip_next_excise = True
-            # Возвращаем фокус на поле баркода
-            self.entry_barcode.focus()
-        else:
-            if len(self.entry_excise.get()) == 0:
-                self.excise_frame.configure(border_color="#DAA520")
-
     def send_data(self, barcode, excise):
         # получаем данные о пользователе и компьютере
         username = getpass.getuser()
@@ -171,29 +141,34 @@ class ReportGenerator:
         barcode = self.entry_barcode.get()
         barcode_len = len(barcode)
 
-        # обновляем цвет рамки баркода
+        # обновление рамки баркода
         if barcode_len == 0:
-            self.barcode_frame.configure(border_color="#808080")
+            self.barcode_frame.configure(border_color="#808080")  # серый
+
         elif barcode_len == 13 and barcode.isdigit():
-            self.show_notification('EAN верный', 2000)
-            self.barcode_frame.configure(border_color="#2E8B57")
+            # self.show_notification(f'EAN верный',2000)
+            self.barcode_frame.configure(border_color="#2E8B57")  # зеленый
+            # активируем поле акциза и ставим фокус
             self.entry_excise.configure(state="normal")
             self.entry_excise.focus()
             self.excise_frame.configure(border_color="#DAA520")
+
+            # привязываем обработчик для акциза только когда поле активировано
             if not hasattr(self, '_excise_bound'):
                 self.entry_excise.bind('<KeyRelease>', self.on_excise_change)
                 self._excise_bound = True
         else:
             if barcode.isdigit():
-                self.show_notification(f'Неверный EAN (длина {barcode_len} из 13)', 1500, label_bg='#800000')
+                self.show_notification(f'Неверный EAN (длина {barcode_len} из 13)', label_bg='#800000')
             else:
-                self.show_notification('В EAN должны быть только цифры', 1500, label_bg='#800000')
+                self.show_notification(f'В EAN должны быть только цифры', label_bg='#800000')
             self.barcode_frame.configure(border_color="#DC143C")
-            self.entry_excise.configure(state="disabled")
+            # деактивируем поле акциза и очищаем его
             self.entry_excise.delete(0, tk.END)
+            self.entry_excise.configure(state="disabled")
             self.excise_frame.configure(border_color="#808080")
 
-    def show_notification(self, message, duration=2000, label_bg='#2E8B57'):
+    def show_notification(self, message, duration=3000, label_bg='#2E8B57'):
         if self._notification_timer is not None:
             try:
                 self.root.after_cancel(self._notification_timer)
@@ -220,43 +195,65 @@ class ReportGenerator:
             self._notification_timer = None
 
     def on_excise_change(self, event=None):
-        # Если установлен флаг пропуска, пропускаем обработку и сбрасываем флаг
-        if self._skip_next_excise:
-            self._skip_next_excise = False
-            return
-
         excise = self.entry_excise.get()
         excise_len = len(excise)
 
-        if excise_len == 0:
-            pass
-        elif excise_len <= 10:
-            self.excise_frame.configure(border_color='#DC143C')
-            self.show_notification(f'Неверный акциз (длина {excise_len} из 150)', 2000, label_bg='#800000')
-        else:
-            self.excise_frame.configure(border_color="#2E8B57")
-            barcode = self.entry_barcode.get()
-            if len(barcode) == 13 and barcode.isdigit():
-                self.send_data(barcode, excise)
-                self.show_notification("Данные успешно добавлены", 2000)
+        barcode = self.entry_barcode.get()
+        barcode_len = len(barcode)
 
-                self.entry_barcode.delete(0, tk.END)
+        if not is_eng():
+            self.show_notification(f'Неверная раскладка. Переключите на EN', label_bg='#800000')
+            self.entry_excise.delete(0, tk.END)
+        else:
+
+            # обновление рамки акциза
+            if barcode_len == 0:
+                self.excise_frame.configure(border_color='#808080')  # серый
                 self.entry_excise.delete(0, tk.END)
                 self.entry_excise.configure(state="disabled")
-                self.barcode_frame.configure(border_color="#808080")
-                self.excise_frame.configure(border_color="#808080")
-                self.entry_barcode.focus()
+                self.barcode.focus()
+            elif excise_len == 0:
+                pass
+            elif 0 < excise_len <= 10:
+                self.excise_frame.configure(border_color='#DC143C')  # красный
+                self.show_notification(f'Неверный акциз (длина {excise_len} из 150)', label_bg='#800000')
+            else:  # больше n символов
+                self.excise_frame.configure(border_color="#2E8B57")  # зеленый
+
+                # фильтр баркода
+                if barcode_len == 13 and barcode.isdigit():
+                    # отправляем данные
+                    self.send_data(barcode, excise)
+
+                    # показываем уведомление снизу
+                    self.show_notification(f"Данные успешно отправлены")
+
+                    # очищаем оба поля
+                    self.entry_barcode.delete(0, tk.END)
+                    self.entry_excise.delete(0, tk.END)
+
+                    # деактивируем поле акциза
+                    self.entry_excise.configure(state="disabled")
+
+                    # сбрасываем цвета рамок
+                    self.barcode_frame.configure(border_color="#808080")
+                    self.excise_frame.configure(border_color="#808080")
+
+                    # устанавливаем курсор на поле баркода
+                    self.entry_barcode.focus()
 
     def generate_report(self):
         barcode = self.entry_barcode.get()
         excise = self.entry_excise.get()
 
         if not barcode or not excise:
-            messagebox.showwarning("Предупреждение", "Заполните оба поля!")
+            # messagebox.showwarning("Предупреждение", "Заполните оба поля!")
             return
 
+        # отправляем данные через ту же функцию
         self.send_data(barcode, excise)
 
+        # очищаем поля
         self.entry_barcode.delete(0, tk.END)
         self.entry_excise.delete(0, tk.END)
         self.entry_excise.configure(state="disabled")
