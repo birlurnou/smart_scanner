@@ -312,8 +312,8 @@ class ReportGenerator:
             # генерируем qr
             try:
                 os.makedirs(qr_path, exist_ok=True)
-            except:
-                ...
+            except Exception as e:
+                logging.error(f'Ошибка при создании папки для QR: {e}')
 
             qr_name = round(time.time())
             qr = segno.make(str(excise), error='h')
