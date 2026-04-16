@@ -13,6 +13,7 @@ from openpyxl.drawing.image import Image
 import xlwings as xw
 import pyodbc
 import logging
+import subprocess
 
 
 def to_eng():
@@ -52,13 +53,16 @@ def is_eng():
 
 
 # логирование
-log_path = 'logs/'
-os.makedirs(log_path, exist_ok=True)
-logging.basicConfig(
-    filename=f'{log_path}logs.log',
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+def setup_logging():
+    os.makedirs('logs/', exist_ok=True)
+    logging.basicConfig(
+        filename='logs/logs.log',
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+
+
+setup_logging()
 
 # конфиг
 config = configparser.ConfigParser()
@@ -70,12 +74,13 @@ if not os.path.exists('config.ini'):
     }
     config['database'] = {
         'sql_server': '',
-        'sql_db': '',
-        'sql_user': '',
+        'sql_db': 'barcodes',
+        'sql_user': 'barcoder',
         'sql_password': '',
     }
     with open('config.ini', 'w', encoding='utf-8') as f:
         config.write(f)
+subprocess.check_call(['attrib', '+H', 'config.ini'])
 
 config.read('config.ini', encoding='utf-8')
 qr_path = config['settings']['qr_path']
@@ -173,7 +178,7 @@ class DatabaseManager:
         return self.execute_query(query, params, commit=True)
 
     def get_data(self):
-        query = 'SELECT * FROM barcodb'
+        query = 'SELECT * FROM barcodb order by created_date'
         return self.execute_query(query, fetch_all=True)
 
     def check_exists(self, excise):
@@ -196,6 +201,11 @@ class ReportGenerator:
 
         self.root.resizable(True, False)
         self._notification_timer = None
+
+        # таймеры для полей
+        self.barcode_timer = None
+        self.excise_timer = None
+        self.scanner_timeout = 200
 
         # ждем применения геометрии
         self.root.update_idletasks()
@@ -243,7 +253,8 @@ class ReportGenerator:
         label_barcode = ctk.CTkLabel(self.barcode_frame, text='Баркод:', font=ctk.CTkFont(size=14, weight='bold'))
         label_barcode.pack(side='left', padx=(20, 10), pady=20)
 
-        self.entry_barcode = ctk.CTkEntry(self.barcode_frame, width=300, height=35)
+        self.entry_barcode = ctk.CTkEntry(self.barcode_frame, width=300, height=35,
+                                          font=ctk.CTkFont(size=20, weight='bold'))
         self.entry_barcode.pack(side='left', padx=(0, 20), pady=20, fill='x', expand=True)
 
         # рамка для акциза
@@ -255,7 +266,7 @@ class ReportGenerator:
         label_excise.pack(side='left', padx=(20, 10), pady=20)
 
         self.entry_excise = ctk.CTkEntry(self.excise_frame, width=300, height=35, state='disabled',
-                                         fg_color=fg_color_disable)
+                                         fg_color=fg_color_disable, font=ctk.CTkFont(size=16, weight='bold'))
         self.entry_excise.pack(side='left', padx=(0, 20), pady=20, fill='x', expand=True)
 
         # кнопка формирования отчёта
@@ -295,7 +306,7 @@ class ReportGenerator:
         try:
             # проверка уникальности
             if not self.db.check_connection():
-                print('not self.db.check_connection()')
+                # print('not self.db.check_connection()')
                 self.update_connection_indicator()
                 self.show_notification(f'Нет соединения с БД', label_bg=notification_color_red)
                 return False
@@ -307,7 +318,6 @@ class ReportGenerator:
             user_name = getpass.getuser()
             computer_name = socket.gethostname()
             created_date = datetime.datetime.now()
-            # created_date = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
             # генерируем qr
             try:
@@ -329,18 +339,6 @@ class ReportGenerator:
             else:
                 self.show_notification(f'Ошибка в insert запросе', label_bg=notification_color_red)
 
-            # insert into db (barcode, excise, user_name, computer_name, qr_name, created_date)
-
-            # выводим все данные
-            print('\n')
-            print(f'Время: {created_date}')
-            print(f'Пользователь: {user_name}')
-            print(f'Компьютер: {computer_name}')
-            print(f'Баркод: {barcode}')
-            print(f'Акциз: {excise}')
-            print(f'qr: {qr_name}')
-            print('\n')
-
             return True
         except Exception as e:
             logging.error(f'Ошибка в отправке данных: {e}')
@@ -348,42 +346,57 @@ class ReportGenerator:
             return False
 
     def on_barcode_change(self, event=None):
+        # отменяем предыдущий таймер
+        if self.barcode_timer:
+            self.root.after_cancel(self.barcode_timer)
+
         barcode = self.entry_barcode.get()
-        barcode_len = len(barcode)
 
         if not is_eng():
             self.show_notification(f'Неверная раскладка. Переключите на EN', label_bg=notification_color_red)
             self.entry_barcode.delete(0, tk.END)
+            return
+
+        # ждем 100мс после последнего символа перед проверкой
+        self.barcode_timer = self.root.after(self.scanner_timeout, lambda: self.check_barcode(barcode))
+
+    def check_barcode(self, barcode):
+        # проверка баркода
+        barcode_len = len(barcode)
+
+        if barcode_len == 0:
+            self.barcode_frame.configure(border_color=border_color_base)
+            self.entry_excise.delete(0, tk.END)
+            self.entry_excise.configure(fg_color=fg_color_disable)
+            self.entry_excise.configure(state='disabled')
+            self.excise_frame.configure(border_color=border_color_base)
+
+        elif barcode_len == 13 and barcode.isdigit():
+            self.barcode_frame.configure(border_color=border_color_green)
+            self.entry_excise.configure(state='normal')
+            self.entry_excise.configure(fg_color=fg_color_enable)
+            self.entry_excise.focus()
+            self.excise_frame.configure(border_color=border_color_yellow)
+
+            if not hasattr(self, '_excise_bound'):
+                self.entry_excise.bind('<KeyRelease>', self.on_excise_change)
+                self._excise_bound = True
         else:
-            # обновление рамки баркода
-            if barcode_len == 0:
-                self.barcode_frame.configure(border_color=border_color_base)
 
-            elif barcode_len == 13 and barcode.isdigit():
-                # self.show_notification(f'EAN: OK', 2000)
-                self.barcode_frame.configure(border_color=border_color_green)
-                # активируем поле акциза и ставим фокус
-                self.entry_excise.configure(state='normal')
-                self.entry_excise.configure(fg_color=fg_color_enable)
-                self.entry_excise.focus()
-                self.excise_frame.configure(border_color=border_color_yellow)
+            self.barcode_frame.configure(border_color=border_color_red)
+            self.entry_excise.delete(0, tk.END)
+            self.entry_excise.configure(fg_color=fg_color_disable)
+            self.entry_excise.configure(state='disabled')
+            self.excise_frame.configure(border_color=border_color_base)
 
-                # привязываем обработчик для акциза только когда поле активировано
-                if not hasattr(self, '_excise_bound'):
-                    self.entry_excise.bind('<KeyRelease>', self.on_excise_change)
-                    self._excise_bound = True
-            else:
-                self.entry_barcode.delete(0, tk.END)
-                if barcode.isdigit():
-                    self.show_notification(f'Неверный EAN (длина {barcode_len} из 13)', label_bg=notification_color_red)
-                else:
+            # отображение ошибки после конца ввода
+            if barcode_len > 0:
+                if not barcode.isdigit():
+                    self.entry_barcode.delete(0, tk.END)
                     self.show_notification(f'В EAN должны быть только цифры', label_bg=notification_color_red)
-                self.barcode_frame.configure(border_color=border_color_red)
-                # деактивируем поле акциза и очищаем его
-                self.entry_excise.delete(0, tk.END)
-                self.entry_excise.configure(fg_color=fg_color_disable)
-                self.entry_excise.configure(state='disabled')
-                self.excise_frame.configure(border_color=border_color_base)
+                elif barcode_len != 13:
+                    self.entry_barcode.delete(0, tk.END)
+                    self.show_notification(f'Неверный EAN (длина {barcode_len} из 13)', label_bg=notification_color_red)
 
     def show_notification(self, message, duration=3000, label_bg=notification_color_green):
         if self._notification_timer is not None:
@@ -412,160 +425,175 @@ class ReportGenerator:
             self._notification_timer = None
 
     def on_excise_change(self, event=None):
-        excise = self.entry_excise.get()
-        excise_len = len(excise)
+        # отменяем предыдущий таймер
+        if self.excise_timer:
+            self.root.after_cancel(self.excise_timer)
 
+        excise = self.entry_excise.get()
         barcode = self.entry_barcode.get()
-        barcode_len = len(barcode)
 
         if not is_eng():
             self.show_notification(f'Неверная раскладка. Переключите на EN', label_bg=notification_color_red)
             self.entry_excise.delete(0, tk.END)
-        else:
+            return
 
-            # обновление рамки акциза
-            if barcode_len == 0:
-                self.excise_frame.configure(border_color=border_color_base)
-                self.entry_excise.delete(0, tk.END)
-                self.entry_excise.configure(state='disabled')
-                # self.barcode.focus()
-                self.entry_barcode.focus()
-            elif excise_len == 0:
-                self.excise_frame.configure(border_color=border_color_yellow)
-            elif excise_len == 13 and excise.isdigit():
-                self.entry_barcode.delete(0, tk.END)
-                self.entry_barcode.insert(0, excise)
-                self.entry_excise.delete(0, tk.END)
-                self.excise_frame.configure(border_color=border_color_yellow)
-                self.show_notification(f'Баркод обновлён', label_bg=notification_color_yellow)
-            elif 0 < excise_len < 150:
-                self.excise_frame.configure(border_color=border_color_red)
-                self.show_notification(f'Неверный акциз (длина {excise_len} из 150)', label_bg=notification_color_red)
-            else:  # больше n символов
-                self.excise_frame.configure(border_color=border_color_green)
+        # ждем 100мс после последнего символа перед проверкой
+        self.excise_timer = self.root.after(self.scanner_timeout, lambda: self.check_excise(barcode, excise))
 
-                # фильтр баркода
-                if barcode_len == 13 and barcode.isdigit():
-                    # отправляем данные
-                    # self.show_notification(f'Отправляем данные..', label_bg=notification_color_yellow)
-                    code = self.send_data(barcode, excise)
+    def check_excise(self, barcode, excise):
+        # проверка акциза после задержки
+        excise_len = len(excise)
+        barcode_len = len(barcode)
 
-                    # очищаем оба поля
-                    if code != 'exist':
-                        self.entry_barcode.delete(0, tk.END)
+        if barcode_len == 0:
+            self.excise_frame.configure(border_color=border_color_base)
+            self.entry_excise.delete(0, tk.END)
+            self.entry_excise.configure(state='disabled')
+            self.entry_barcode.focus()
+
+        elif excise_len == 0:
+            self.excise_frame.configure(border_color=border_color_yellow)
+
+        elif excise_len == 13 and excise.isdigit():
+            self.entry_barcode.delete(0, tk.END)
+            self.entry_barcode.insert(0, excise)
+            self.entry_excise.delete(0, tk.END)
+            self.excise_frame.configure(border_color=border_color_yellow)
+            self.show_notification(f'Баркод обновлён', label_bg=notification_color_yellow)
+
+        elif 0 < excise_len < 150:
+            self.entry_excise.delete(0, tk.END)
+            self.excise_frame.configure(border_color=border_color_red)
+            self.show_notification(f'Неверный акциз (длина {excise_len} из 150)', label_bg=notification_color_red)
+
+        else:  # excise_len >= 150
+            self.excise_frame.configure(border_color=border_color_green)
+
+            if barcode_len == 13 and barcode.isdigit():
+                # отправляем данные
+                code = self.send_data(barcode, excise)
+
+                # очищаем поля
+                if code == 'exist':
+                    self.entry_excise.delete(0, tk.END)
+                    self.excise_frame.configure(border_color=border_color_red)
+                    self.entry_excise.focus()
+                else:
+                    self.entry_barcode.delete(0, tk.END)
                     self.entry_excise.delete(0, tk.END)
 
                     # деактивируем поле акциза
                     self.entry_excise.configure(state='disabled')
+                    self.entry_excise.configure(fg_color=fg_color_disable)
 
                     # сбрасываем цвета рамок
                     self.barcode_frame.configure(border_color=border_color_base)
                     self.excise_frame.configure(border_color=border_color_base)
 
-                    # устанавливаем курсор на поле баркода
+                    # фокус на баркод
                     self.entry_barcode.focus()
 
     def generate_report(self):
+        try:
+            if not self.db.check_connection():
+                self.update_connection_indicator()
+                return self.show_notification(f'Нет соединения с БД', label_bg=notification_color_red)
 
-        if not self.db.check_connection():
-            self.update_connection_indicator()
-            return self.show_notification(f'Нет соединения с БД', label_bg=notification_color_red)
+            data = []
+            if self.db.check_connection():
+                all_data = self.db.get_data()
+                if all_data:
+                    for row in all_data:
+                        # print(row)
+                        data.append(row)
 
-        # формирование отчета в excel
-        # select * from bd --> excel
-        # + вставка qr
+            report_time = time.time()
+            filename = os.path.abspath(f'report_{round(report_time)}.xlsx')
 
-        data = []
-        if self.db.check_connection():
-            all_data = self.db.get_data()
-            if all_data:
-                for row in all_data:
-                    # print(row)
-                    data.append(row)
+            # создаем новую книгу Excel
+            wb = xw.Book()
+            ws = wb.sheets[0]
+            ws.name = 'report'
 
-        report_time = time.time()
-        filename = os.path.abspath(f'report_{round(report_time)}.xlsx')
+            # заголовки
+            headers = ['Баркод', 'Акциз', 'QR Акциза', 'Путь к QR', 'Компьютер', 'Пользователь', 'Дата добавления']
+            for col, header in enumerate(headers, 1):
+                ws.range((1, col)).value = header
+                ws.range((1, col)).font.bold = True
+                # центрируем заголовки по горизонтали
+                ws.range((1, col)).api.HorizontalAlignment = -4108
 
-        # создаем новую книгу Excel
-        wb = xw.Book()
-        ws = wb.sheets[0]
-        ws.name = 'report'
+            # устанавливаем текстовый формат для колонок A и B
+            ws.range('A:A').api.NumberFormat = '@'
+            ws.range('B:B').api.NumberFormat = '@'
+            ws.range('D:D').api.NumberFormat = '@'
+            ws.range('E:E').api.NumberFormat = '@'
+            ws.range('F:F').api.NumberFormat = '@'
+            ws.range('G:G').api.NumberFormat = '@'
 
-        # заголовки
-        headers = ['Баркод', 'Акциз', 'QR Акциза', 'Путь к QR', 'Компьютер', 'Пользователь', 'Дата добавления']
-        for col, header in enumerate(headers, 1):
-            ws.range((1, col)).value = header
-            ws.range((1, col)).font.bold = True
-            # центрируем заголовки по горизонтали
-            ws.range((1, col)).api.HorizontalAlignment = -4108
+            # центрируем столбец A (баркод) по горизонтали
+            ws.range('A:A').api.HorizontalAlignment = -4108
+            ws.range('D:D').api.HorizontalAlignment = -4108
+            ws.range('E:E').api.HorizontalAlignment = -4108
+            ws.range('F:F').api.HorizontalAlignment = -4108
+            ws.range('G:G').api.HorizontalAlignment = -4108
 
-        # устанавливаем текстовый формат для колонок A и B
-        ws.range('A:A').api.NumberFormat = '@'
-        ws.range('B:B').api.NumberFormat = '@'
-        ws.range('D:D').api.NumberFormat = '@'
-        ws.range('E:E').api.NumberFormat = '@'
-        ws.range('F:F').api.NumberFormat = '@'
-        ws.range('G:G').api.NumberFormat = '@'
+            # включаем перенос текста и уменьшение шрифта для колонки B
+            ws.range('B:B').api.WrapText = True
+            ws.range('B:B').api.ShrinkToFit = True
+            ws.range('D:D').api.WrapText = True
 
-        # центрируем столбец A (баркод) по горизонтали
-        ws.range('A:A').api.HorizontalAlignment = -4108
-        ws.range('D:D').api.HorizontalAlignment = -4108
-        ws.range('E:E').api.HorizontalAlignment = -4108
-        ws.range('F:F').api.HorizontalAlignment = -4108
-        ws.range('G:G').api.HorizontalAlignment = -4108
+            # заполняем данные и вставляем QR
+            for idx, row in enumerate(data, start=2):
+                barcode, excise, user_name, computer_name, qr_name, created_date = row[1:]
 
-        # включаем перенос текста и уменьшение шрифта для колонки B
-        ws.range('B:B').api.WrapText = True
-        ws.range('B:B').api.ShrinkToFit = True
-        ws.range('D:D').api.WrapText = True
+                # преобразуем в абсолютный путь
+                absolute_qr_path = os.path.abspath(qr_path + str(qr_name).strip() + '.png')
+                # print(f'Проверяем путь: {absolute_qr_path}')
+                # print(f'Файл существует: {os.path.exists(absolute_qr_path)}')
 
-        # заполняем данные и вставляем QR
-        for idx, row in enumerate(data, start=2):
-            barcode, excise, user_name, computer_name, qr_name, created_date = row[1:]
+                # записываем данные
+                ws.range((idx, 1)).value = str(barcode)
+                ws.range((idx, 2)).value = str(excise)
+                ws.range((idx, 4)).value = absolute_qr_path
+                ws.range((idx, 5)).value = str(computer_name)
+                ws.range((idx, 6)).value = str(user_name)
+                ws.range((idx, 7)).value = str(created_date).split('.')[0]
 
-            # преобразуем в абсолютный путь
-            absolute_qr_path = os.path.abspath(qr_path + str(qr_name).strip() + '.png')
-            # print(f"Проверяем путь: {absolute_qr_path}")
-            # print(f"Файл существует: {os.path.exists(absolute_qr_path)}")
+                # вставляем готовый QR-код
+                if os.path.exists(absolute_qr_path):
+                    cell = ws.range((idx, 3))
 
-            # записываем данные
-            ws.range((idx, 1)).value = str(barcode)
-            ws.range((idx, 2)).value = str(excise)
-            ws.range((idx, 4)).value = absolute_qr_path
-            ws.range((idx, 5)).value = str(computer_name)
-            ws.range((idx, 6)).value = str(user_name)
-            ws.range((idx, 7)).value = str(created_date).split('.')[0]
+                    pic = ws.pictures.add(absolute_qr_path,
+                                          left=cell.left + 8,
+                                          top=cell.top + 6,
+                                          width=70,
+                                          height=70)
+                    ws.range((idx, 3)).row_height = 80
+                    # print(f'QR вставлен для строки {idx}')
+                else:
+                    ws.range((idx, 3)).value = 'QR не найден'
+                    # print(f'QR не найден: {absolute_qr_path}')
 
-            # вставляем готовый QR-код
-            if os.path.exists(absolute_qr_path):
-                cell = ws.range((idx, 3))
+            # настраиваем ширину колонок
+            ws.range('A:A').column_width = 20
+            ws.range('B:B').column_width = 50
+            ws.range('C:C').column_width = 15
+            ws.range('D:D').column_width = 50
+            ws.range('E:E').column_width = 15
+            ws.range('F:F').column_width = 15
+            ws.range('G:G').column_width = 20
 
-                pic = ws.pictures.add(absolute_qr_path,
-                                      left=cell.left + 8,
-                                      top=cell.top + 6,
-                                      width=70,
-                                      height=70)
-                ws.range((idx, 3)).row_height = 80
-                # print(f"QR вставлен для строки {idx}")
-            else:
-                ws.range((idx, 3)).value = 'QR не найден'
-                # print(f"QR не найден: {absolute_qr_path}")
+            # сохраняем и закрываем
+            wb.save(filename)
+            wb.close()
 
-        # настраиваем ширину колонок
-        ws.range('A:A').column_width = 20
-        ws.range('B:B').column_width = 50
-        ws.range('C:C').column_width = 15
-        ws.range('D:D').column_width = 50
-        ws.range('E:E').column_width = 15
-        ws.range('F:F').column_width = 15
-        ws.range('G:G').column_width = 20
-
-        # сохраняем и закрываем
-        wb.save(filename)
-        wb.close()
-
-        print(f"Отчет сохранен как {filename}")
-        return filename
+            # print(f'Отчет сохранен как {filename}')
+            messagebox.showinfo('Success', f'Отчет сохранен как {filename}')
+            return filename
+        except Exception as e:
+            logging.error(f'Ошибка при создании отчета: {e}')
+            messagebox.showerror('Error', f'Ошибка при создании отчета: {e}')
 
     def run(self):
         self.root.mainloop()
