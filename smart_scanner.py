@@ -66,46 +66,24 @@ setup_logging()
 
 # конфиг
 config = configparser.ConfigParser()
-if not os.path.exists('config.ini'):
+
+if not os.path.exists('.config'):
     # конфиг по умолчанию
     config['settings'] = {
-        'qr_path': '',
-        'appearance_mode': 'dark'
+        'qr_path': 'qr\\'
     }
-    config['database'] = {
-        'sql_server': '',
-        'sql_db': 'barcodes',
-        'sql_user': 'barcoder',
-        'sql_password': '',
-    }
-    with open('config.ini', 'w', encoding='utf-8') as f:
+    with open('.config', 'w', encoding='utf-8') as f:
         config.write(f)
-subprocess.check_call(['attrib', '+H', 'config.ini'])
 
-config.read('config.ini', encoding='utf-8')
+subprocess.check_call(['attrib', '+H', '.config'])
+
+config.read('.config', encoding='utf-8')
 qr_path = config['settings']['qr_path']
-appearance_mode = config['settings']['appearance_mode']
-
-# colors
-border_color_base = '#808080'
-
-border_color_green = '#2E8B57'
-border_color_yellow = '#DAA520'
-border_color_red = '#DC143C'
-
-notification_color_green = '#2E8B57'
-notification_color_yellow = '#DAA520'
-notification_color_red = '#800000'
-
-if 'light' in appearance_mode:
-    fg_color_disable = '#b8b8b8'
-    fg_color_enable = '#ffffff'
-else:
-    fg_color_disable = '#202121'
-    fg_color_enable = '#343536'
+# abs_qr_path = os.path.abspath(qr_path)
+# print(abs_qr_path)
+# print(os.path.exists(abs_qr_path))
 
 # внешний вид
-ctk.set_appearance_mode(appearance_mode)
 ctk.set_default_color_theme('dark-blue')
 
 # переключение на en с проверкой
@@ -113,12 +91,34 @@ if not is_eng():
     to_eng()
 
 
+class ThemeColors:
+    def __init__(self, mode='dark'):
+        self.update(mode)
+
+    def update(self, mode):
+        self.border_color_base = '#808080'
+        self.border_color_green = '#2E8B57'
+        self.border_color_yellow = '#DAA520'
+        self.border_color_red = '#DC143C'
+        self.notification_color_green = '#2E8B57'
+        self.notification_color_yellow = '#DAA520'
+        self.notification_color_red = '#800000'
+
+        if mode == 'light':
+            # self.fg_color_disable = '#b8b8b8'
+            self.fg_color_disable = '#e6e6e6'
+            self.fg_color_enable = '#ffffff'
+        else:
+            self.fg_color_disable = '#202121'
+            self.fg_color_enable = '#343536'
+
+
 class DatabaseManager:
     def __init__(self):
-        self.SQL_SERVER = config['database']['SQL_SERVER']
-        self.SQL_DB = config['database']['SQL_DB']
-        self.SQL_USER = config['database']['SQL_USER']
-        self.SQL_PASSWORD = config['database']['SQL_PASSWORD']
+        self.SQL_SERVER = 'YEKHR1C01'
+        self.SQL_DB = 'barcodes'
+        self.SQL_USER = 'barcoder'
+        self.SQL_PASSWORD = '@0Jx.7L6^Mt0'
         self.conn_str = f'DRIVER={{SQL Server}};SERVER={self.SQL_SERVER};DATABASE={self.SQL_DB};UID={self.SQL_USER};PWD={self.SQL_PASSWORD}'
 
     def check_connection(self):
@@ -128,7 +128,6 @@ class DatabaseManager:
             return True
         except pyodbc.Error as e:
             logging.error(f'Ошибка проверки подключения к бд: {e}')
-            # print(f'Connection check failed: {e}')
             return False
 
     def get_connection(self):
@@ -136,7 +135,6 @@ class DatabaseManager:
             return pyodbc.connect(self.conn_str)
         except pyodbc.Error as e:
             logging.error(f'Ошибка подключения к бд: {e}')
-            # print(f'Connection error: {e}')
             return None
 
     def execute_query(self, query, params=None, fetch_one=False, fetch_all=False, commit=False):
@@ -193,6 +191,9 @@ class ReportGenerator:
         self.root = ctk.CTk()
         self.root.title('Scanner')
         self.db = DatabaseManager()
+        self.colors = ThemeColors()
+        self.appearance_mode = 'dark'
+        ctk.set_appearance_mode(self.appearance_mode)
 
         # задаем размеры окна
         self.width = 650
@@ -236,21 +237,35 @@ class ReportGenerator:
         main_container = ctk.CTkFrame(self.root, fg_color='transparent')
         main_container.pack(fill='both', expand=True, padx=30, pady=10)
 
+        # верхняя панель с индикатором и тогглером
+        top_bar = ctk.CTkFrame(main_container, fg_color='transparent')
+        top_bar.pack(fill='x', pady=(0, 5))
+
         # индикатор подключения к БД
         self.connection_indicator = ctk.CTkLabel(
-            main_container,
+            top_bar,
             text='●',
-            font=ctk.CTkFont(size=15)
+            font=ctk.CTkFont(size=17)
         )
-        self.connection_indicator.pack(anchor='w', pady=(0, 5), padx=10)
+        self.connection_indicator.pack(side='left', padx=10)
         self.update_connection_indicator()
 
+        # свитчер переключения темы
+        self.theme_switch = ctk.CTkSwitch(
+            top_bar,
+            text='Сменить тему',
+            command=self.toggle_theme,
+            font=ctk.CTkFont(size=15)
+        )
+        self.theme_switch.pack(side='right', padx=0)
+        self.theme_switch.select() if self.appearance_mode == 'dark' else self.theme_switch.deselect()
+
         # рамка для баркода
-        self.barcode_frame = ctk.CTkFrame(main_container, border_width=2, border_color=border_color_base,
+        self.barcode_frame = ctk.CTkFrame(main_container, border_width=2, border_color=self.colors.border_color_base,
                                           corner_radius=10)
         self.barcode_frame.pack(fill='x', pady=(0, 20))
 
-        label_barcode = ctk.CTkLabel(self.barcode_frame, text='Баркод:', font=ctk.CTkFont(size=14, weight='bold'))
+        label_barcode = ctk.CTkLabel(self.barcode_frame, text='Баркод:', font=ctk.CTkFont(size=17, weight='bold'))
         label_barcode.pack(side='left', padx=(20, 10), pady=20)
 
         self.entry_barcode = ctk.CTkEntry(self.barcode_frame, width=300, height=35,
@@ -258,15 +273,16 @@ class ReportGenerator:
         self.entry_barcode.pack(side='left', padx=(0, 20), pady=20, fill='x', expand=True)
 
         # рамка для акциза
-        self.excise_frame = ctk.CTkFrame(main_container, border_width=2, border_color=border_color_base,
+        self.excise_frame = ctk.CTkFrame(main_container, border_width=2, border_color=self.colors.border_color_base,
                                          corner_radius=10)
         self.excise_frame.pack(fill='x', pady=(0, 10))
 
-        label_excise = ctk.CTkLabel(self.excise_frame, text='Акциз:', font=ctk.CTkFont(size=14, weight='bold'))
+        label_excise = ctk.CTkLabel(self.excise_frame, text='Акциз:  ', font=ctk.CTkFont(size=17, weight='bold'))
         label_excise.pack(side='left', padx=(20, 10), pady=20)
 
         self.entry_excise = ctk.CTkEntry(self.excise_frame, width=300, height=35, state='disabled',
-                                         fg_color=fg_color_disable, font=ctk.CTkFont(size=16, weight='bold'))
+                                         fg_color=self.colors.fg_color_disable,
+                                         font=ctk.CTkFont(size=16, weight='bold'))
         self.entry_excise.pack(side='left', padx=(0, 20), pady=20, fill='x', expand=True)
 
         # кнопка формирования отчёта
@@ -276,9 +292,9 @@ class ReportGenerator:
             command=self.generate_report,
             width=200,
             height=45,
-            fg_color=border_color_green,
+            fg_color=self.colors.border_color_green,
             text_color='white',
-            font=ctk.CTkFont(size=15, weight='bold'),
+            font=ctk.CTkFont(size=17, weight='bold'),
             hover_color='#3CB371'
         )
         self.button_generate.pack(side='right')
@@ -287,16 +303,33 @@ class ReportGenerator:
         self.notification_label = ctk.CTkLabel(
             main_container,
             text='',
-            font=ctk.CTkFont(size=15),
-            fg_color=border_color_green,
+            font=ctk.CTkFont(size=17),
+            fg_color=self.colors.border_color_green,
             text_color='white',
             corner_radius=6,
-            padx=15,
-            pady=5
+            padx=25,
+            pady=15
         )
 
         # привязываем события ввода
         self.entry_barcode.bind('<KeyRelease>', self.on_barcode_change)
+
+    def toggle_theme(self):
+        if self.appearance_mode == 'dark':
+            self.appearance_mode = 'light'
+            ctk.set_appearance_mode('light')
+        else:
+            self.appearance_mode = 'dark'
+            ctk.set_appearance_mode('dark')
+
+        # обновляем цвета в классе ThemeColors
+        self.colors.update(self.appearance_mode)
+
+        # обновляем состояние полей
+        if self.entry_excise.cget('state') == 'disabled':
+            self.entry_excise.configure(fg_color=self.colors.fg_color_disable)
+        else:
+            self.entry_excise.configure(fg_color=self.colors.fg_color_enable)
 
     def update_connection_indicator(self):
         (color, state) = ('#2E8B57', 'connected') if self.db.check_connection() else ('#DC143C', 'disconnected')
@@ -308,10 +341,10 @@ class ReportGenerator:
             if not self.db.check_connection():
                 # print('not self.db.check_connection()')
                 self.update_connection_indicator()
-                self.show_notification(f'Нет соединения с БД', label_bg=notification_color_red)
+                self.show_notification(f'Нет соединения с БД', label_bg=self.colors.notification_color_red)
                 return False
             if self.db.check_exists(excise):
-                self.show_notification(f'Данный акциз уже существует', label_bg=notification_color_red)
+                self.show_notification(f'Данный акциз уже существует', label_bg=self.colors.notification_color_red)
                 return 'exist'
 
             # получаем данные о пользователе и компьютере
@@ -335,14 +368,14 @@ class ReportGenerator:
 
             # отправляем insert
             if self.db.add_record(barcode, excise, user_name, computer_name, qr_name, created_date):
-                self.show_notification(f'Данные успешно добавлены', label_bg=notification_color_green)
+                self.show_notification(f'Данные успешно добавлены', label_bg=self.colors.notification_color_green)
             else:
-                self.show_notification(f'Ошибка в insert запросе', label_bg=notification_color_red)
+                self.show_notification(f'Ошибка в insert запросе', label_bg=self.colors.notification_color_red)
 
             return True
         except Exception as e:
             logging.error(f'Ошибка в отправке данных: {e}')
-            self.show_notification(f'Ошибка в отправке данных', label_bg=notification_color_red)
+            self.show_notification(f'Ошибка в отправке данных', label_bg=self.colors.notification_color_red)
             return False
 
     def on_barcode_change(self, event=None):
@@ -353,7 +386,9 @@ class ReportGenerator:
         barcode = self.entry_barcode.get()
 
         if not is_eng():
-            self.show_notification(f'Неверная раскладка. Переключите на EN', label_bg=notification_color_red)
+            self.show_notification(f'Неверная раскладка. Переключите на EN',
+                                   label_bg=self.colors.notification_color_red,
+                                   duration=1500)
             self.entry_barcode.delete(0, tk.END)
             return
 
@@ -365,40 +400,45 @@ class ReportGenerator:
         barcode_len = len(barcode)
 
         if barcode_len == 0:
-            self.barcode_frame.configure(border_color=border_color_base)
+            self.barcode_frame.configure(border_color=self.colors.border_color_base)
             self.entry_excise.delete(0, tk.END)
-            self.entry_excise.configure(fg_color=fg_color_disable)
+            self.entry_excise.configure(fg_color=self.colors.fg_color_disable)
             self.entry_excise.configure(state='disabled')
-            self.excise_frame.configure(border_color=border_color_base)
+            self.excise_frame.configure(border_color=self.colors.border_color_base)
 
         elif barcode_len == 13 and barcode.isdigit():
-            self.barcode_frame.configure(border_color=border_color_green)
+            self.barcode_frame.configure(border_color=self.colors.border_color_green)
             self.entry_excise.configure(state='normal')
-            self.entry_excise.configure(fg_color=fg_color_enable)
+            self.entry_excise.configure(fg_color=self.colors.fg_color_enable)
             self.entry_excise.focus()
-            self.excise_frame.configure(border_color=border_color_yellow)
+            self.excise_frame.configure(border_color=self.colors.border_color_yellow)
 
             if not hasattr(self, '_excise_bound'):
                 self.entry_excise.bind('<KeyRelease>', self.on_excise_change)
                 self._excise_bound = True
         else:
 
-            self.barcode_frame.configure(border_color=border_color_red)
+            self.barcode_frame.configure(border_color=self.colors.border_color_red)
             self.entry_excise.delete(0, tk.END)
-            self.entry_excise.configure(fg_color=fg_color_disable)
+            self.entry_excise.configure(fg_color=self.colors.fg_color_disable)
             self.entry_excise.configure(state='disabled')
-            self.excise_frame.configure(border_color=border_color_base)
+            self.excise_frame.configure(border_color=self.colors.border_color_base)
 
             # отображение ошибки после конца ввода
             if barcode_len > 0:
                 if not barcode.isdigit():
                     self.entry_barcode.delete(0, tk.END)
-                    self.show_notification(f'В EAN должны быть только цифры', label_bg=notification_color_red)
+                    self.show_notification(f'В EAN должны быть только цифры',
+                                           label_bg=self.colors.notification_color_red)
                 elif barcode_len != 13:
                     self.entry_barcode.delete(0, tk.END)
-                    self.show_notification(f'Неверный EAN (длина {barcode_len} из 13)', label_bg=notification_color_red)
+                    self.show_notification(f'Неверный EAN (длина {barcode_len} из 13)',
+                                           label_bg=self.colors.notification_color_red)
 
-    def show_notification(self, message, duration=3000, label_bg=notification_color_green):
+    def show_notification(self, message, duration=3000, label_bg=None):
+        if label_bg is None:
+            label_bg = self.colors.notification_color_green
+
         if self._notification_timer is not None:
             try:
                 self.root.after_cancel(self._notification_timer)
@@ -433,7 +473,9 @@ class ReportGenerator:
         barcode = self.entry_barcode.get()
 
         if not is_eng():
-            self.show_notification(f'Неверная раскладка. Переключите на EN', label_bg=notification_color_red)
+            self.show_notification(f'Неверная раскладка. Переключите на EN',
+                                   label_bg=self.colors.notification_color_red,
+                                   duration=1500)
             self.entry_excise.delete(0, tk.END)
             return
 
@@ -446,28 +488,29 @@ class ReportGenerator:
         barcode_len = len(barcode)
 
         if barcode_len == 0:
-            self.excise_frame.configure(border_color=border_color_base)
+            self.excise_frame.configure(border_color=self.colors.border_color_base)
             self.entry_excise.delete(0, tk.END)
             self.entry_excise.configure(state='disabled')
             self.entry_barcode.focus()
 
         elif excise_len == 0:
-            self.excise_frame.configure(border_color=border_color_yellow)
+            self.excise_frame.configure(border_color=self.colors.border_color_yellow)
 
         elif excise_len == 13 and excise.isdigit():
             self.entry_barcode.delete(0, tk.END)
             self.entry_barcode.insert(0, excise)
             self.entry_excise.delete(0, tk.END)
-            self.excise_frame.configure(border_color=border_color_yellow)
-            self.show_notification(f'Баркод обновлён', label_bg=notification_color_yellow)
+            self.excise_frame.configure(border_color=self.colors.border_color_yellow)
+            self.show_notification(f'Баркод обновлён', label_bg=self.colors.notification_color_yellow)
 
         elif 0 < excise_len < 150:
             self.entry_excise.delete(0, tk.END)
-            self.excise_frame.configure(border_color=border_color_red)
-            self.show_notification(f'Неверный акциз (длина {excise_len} из 150)', label_bg=notification_color_red)
+            self.excise_frame.configure(border_color=self.colors.border_color_red)
+            self.show_notification(f'Неверный акциз (длина {excise_len} из 150)',
+                                   label_bg=self.colors.notification_color_red)
 
         else:  # excise_len >= 150
-            self.excise_frame.configure(border_color=border_color_green)
+            self.excise_frame.configure(border_color=self.colors.border_color_green)
 
             if barcode_len == 13 and barcode.isdigit():
                 # отправляем данные
@@ -476,7 +519,7 @@ class ReportGenerator:
                 # очищаем поля
                 if code == 'exist':
                     self.entry_excise.delete(0, tk.END)
-                    self.excise_frame.configure(border_color=border_color_red)
+                    self.excise_frame.configure(border_color=self.colors.border_color_red)
                     self.entry_excise.focus()
                 else:
                     self.entry_barcode.delete(0, tk.END)
@@ -484,11 +527,11 @@ class ReportGenerator:
 
                     # деактивируем поле акциза
                     self.entry_excise.configure(state='disabled')
-                    self.entry_excise.configure(fg_color=fg_color_disable)
+                    self.entry_excise.configure(fg_color=self.colors.fg_color_disable)
 
                     # сбрасываем цвета рамок
-                    self.barcode_frame.configure(border_color=border_color_base)
-                    self.excise_frame.configure(border_color=border_color_base)
+                    self.barcode_frame.configure(border_color=self.colors.border_color_base)
+                    self.excise_frame.configure(border_color=self.colors.border_color_base)
 
                     # фокус на баркод
                     self.entry_barcode.focus()
@@ -497,7 +540,7 @@ class ReportGenerator:
         try:
             if not self.db.check_connection():
                 self.update_connection_indicator()
-                return self.show_notification(f'Нет соединения с БД', label_bg=notification_color_red)
+                return self.show_notification(f'Нет соединения с БД', label_bg=self.colors.notification_color_red)
 
             data = []
             if self.db.check_connection():
@@ -565,15 +608,13 @@ class ReportGenerator:
                     cell = ws.range((idx, 3))
 
                     pic = ws.pictures.add(absolute_qr_path,
-                                          left=cell.left + 8,
-                                          top=cell.top + 6,
-                                          width=70,
-                                          height=70)
+                                          left=cell.left + 4,
+                                          top=cell.top + 2,
+                                          width=77,
+                                          height=77)
                     ws.range((idx, 3)).row_height = 80
-                    # print(f'QR вставлен для строки {idx}')
                 else:
                     ws.range((idx, 3)).value = 'QR не найден'
-                    # print(f'QR не найден: {absolute_qr_path}')
 
             # настраиваем ширину колонок
             ws.range('A:A').column_width = 20
@@ -588,7 +629,6 @@ class ReportGenerator:
             wb.save(filename)
             wb.close()
 
-            # print(f'Отчет сохранен как {filename}')
             messagebox.showinfo('Success', f'Отчет сохранен как {filename}')
             return filename
         except Exception as e:
