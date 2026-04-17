@@ -7,7 +7,6 @@ import os
 import getpass
 import socket
 import ctypes
-import configparser
 import segno
 from openpyxl.drawing.image import Image
 import xlwings as xw
@@ -64,24 +63,7 @@ def setup_logging():
 
 setup_logging()
 
-# конфиг
-config = configparser.ConfigParser()
-
-if not os.path.exists('.config'):
-    # конфиг по умолчанию
-    config['settings'] = {
-        'qr_path': 'qr\\'
-    }
-    with open('.config', 'w', encoding='utf-8') as f:
-        config.write(f)
-
-subprocess.check_call(['attrib', '+H', '.config'])
-
-config.read('.config', encoding='utf-8')
-qr_path = config['settings']['qr_path']
-# abs_qr_path = os.path.abspath(qr_path)
-# print(abs_qr_path)
-# print(os.path.exists(abs_qr_path))
+qr_path = r'QRCODES\\'
 
 # внешний вид
 ctk.set_default_color_theme('dark-blue')
@@ -105,7 +87,6 @@ class ThemeColors:
         self.notification_color_red = '#800000'
 
         if mode == 'light':
-            # self.fg_color_disable = '#b8b8b8'
             self.fg_color_disable = '#e6e6e6'
             self.fg_color_enable = '#ffffff'
         else:
@@ -115,10 +96,10 @@ class ThemeColors:
 
 class DatabaseManager:
     def __init__(self):
-        self.SQL_SERVER = 'YEKHR1C01'
-        self.SQL_DB = 'barcodes'
-        self.SQL_USER = 'barcoder'
-        self.SQL_PASSWORD = '@0Jx.7L6^Mt0'
+        self.SQL_SERVER = 'SQL_SERVER'
+        self.SQL_DB = 'SQL_DB'
+        self.SQL_USER = 'SQL_USER'
+        self.SQL_PASSWORD = 'SQL_PASSWORD'
         self.conn_str = f'DRIVER={{SQL Server}};SERVER={self.SQL_SERVER};DATABASE={self.SQL_DB};UID={self.SQL_USER};PWD={self.SQL_PASSWORD}'
 
     def check_connection(self):
@@ -339,7 +320,6 @@ class ReportGenerator:
         try:
             # проверка уникальности
             if not self.db.check_connection():
-                # print('not self.db.check_connection()')
                 self.update_connection_indicator()
                 self.show_notification(f'Нет соединения с БД', label_bg=self.colors.notification_color_red)
                 return False
@@ -351,6 +331,23 @@ class ReportGenerator:
             user_name = getpass.getuser()
             computer_name = socket.gethostname()
             created_date = datetime.datetime.now()
+
+            try:
+                # проверяем существует ли папка
+                if not os.path.exists(qr_path):
+                    os.makedirs(qr_path, exist_ok=True)
+                else:
+                    pass
+
+                # проверяем доступ на запись
+                test_file = os.path.join(qr_path, 'test.txt')
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+            except Exception as e:
+                logging.error(f'Ошибка доступа к папке: {e}')
+                self.show_notification(f'Нет доступа к папке с QR', label_bg=self.colors.notification_color_red)
+                return False
 
             # генерируем qr
             try:
@@ -547,11 +544,12 @@ class ReportGenerator:
                 all_data = self.db.get_data()
                 if all_data:
                     for row in all_data:
-                        # print(row)
                         data.append(row)
 
             report_time = time.time()
-            filename = os.path.abspath(f'report_{round(report_time)}.xlsx')
+            if not os.path.exists(r'reports\\'):
+                os.makedirs(r'reports\\', exist_ok=True)
+            filename = os.path.abspath(fr'reports\report_{round(report_time)}.xlsx')
 
             # создаем новую книгу Excel
             wb = xw.Book()
@@ -592,8 +590,6 @@ class ReportGenerator:
 
                 # преобразуем в абсолютный путь
                 absolute_qr_path = os.path.abspath(qr_path + str(qr_name).strip() + '.png')
-                # print(f'Проверяем путь: {absolute_qr_path}')
-                # print(f'Файл существует: {os.path.exists(absolute_qr_path)}')
 
                 # записываем данные
                 ws.range((idx, 1)).value = str(barcode)
